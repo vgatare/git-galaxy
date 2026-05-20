@@ -176,6 +176,100 @@ canvas#stage:active {
   background: rgba(125, 212, 255, 0.08);
 }
 
+/* ---- File search ------------------------------------------------------ */
+
+.search {
+  position: relative;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+#search-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 8px 12px;
+  border-radius: 8px;
+  width: 200px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(125, 212, 255, 0.18);
+}
+
+#search-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 12px;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  z-index: 11;
+  box-shadow: var(--shadow);
+}
+
+.search-results .item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg);
+}
+
+.search-results .item:hover,
+.search-results .item.active {
+  background: rgba(125, 212, 255, 0.12);
+}
+
+.search-results .item .name {
+  font-weight: 600;
+}
+
+.search-results .item .path {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: auto;
+  text-align: right;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-results .item .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.search-results .empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 /* ---- Info panel ------------------------------------------------------- */
 
 #hud-info {

@@ -40,6 +40,16 @@
         />
         <button type="submit" id="launch-btn">Launch</button>
       </form>
+      <div class="search">
+        <input
+          id="search-input"
+          type="text"
+          spellcheck="false"
+          placeholder="search files…"
+          aria-label="Search files in the loaded repository"
+        />
+        <div id="search-results" class="search-results hidden" role="listbox"></div>
+      </div>
       <div class="hint">
         Try
         <button class="suggest" data-repo="mrdoob/three.js">three.js</button>

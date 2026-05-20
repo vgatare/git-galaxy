@@ -21,6 +21,7 @@ import { StarPicker } from "./interaction/picking";
 import { buildLegend, renderLegend } from "./ui/legend";
 import { hideInfoPanel, renderInfoPanel } from "./ui/info";
 import { createTimeline } from "./ui/timeline";
+import { createSearch } from "./ui/search";
 import { formatBytes, formatNumber } from "./ui/format";
 
 // ---- DOM lookup helpers -------------------------------------------------
@@ -50,6 +51,8 @@ const metaStats = el<HTMLDivElement>("meta-stats");
 const timelineContainer = el<HTMLDivElement>("timeline");
 const timelineRange = el<HTMLInputElement>("timeline-range");
 const timelineLabel = el<HTMLDivElement>("timeline-label");
+const searchInput = el<HTMLInputElement>("search-input");
+const searchResults = el<HTMLDivElement>("search-results");
 const toast = el<HTMLDivElement>("toast");
 
 // ---- Toast --------------------------------------------------------------
@@ -115,6 +118,8 @@ function clearScene(): void {
   legendPanel.classList.add("hidden");
   metaEl.classList.add("hidden");
   timelineCtrl.hide();
+  searchCtrl.setGalaxy(null);
+  searchCtrl.setEnabled(false);
 }
 
 function setMeta(snapshot: FullRepoSnapshot, galaxy: GalaxyData): void {
@@ -137,6 +142,17 @@ const timelineCtrl = createTimeline(
   timelineRange,
   timelineLabel,
 );
+
+// ---- Search ------------------------------------------------------------
+
+const searchCtrl = createSearch(searchInput, searchResults);
+searchCtrl.setEnabled(false);
+searchCtrl.onPick((hit) => {
+  if (!active) return;
+  const idx = active.galaxy.byId.get(hit.node.id);
+  if (idx === undefined) return;
+  selectStar(idx);
+});
 
 let lastScrubIndex = -1;
 const tmpPos = new THREE.Vector3();
@@ -233,6 +249,9 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
     } else {
       timelineCtrl.hide();
     }
+
+    searchCtrl.setGalaxy(galaxy);
+    searchCtrl.setEnabled(true);
 
     cameraRig.cinematicEntrance(maxRadius);
 
@@ -365,10 +384,18 @@ window.addEventListener("keydown", (e) => {
     hideInfoPanel(infoPanel);
   } else if (e.key === "r" || e.key === "R") {
     if (active) cameraRig.resetView(active.maxRadius);
-  } else if (e.key === "/" || (e.key === "k" && (e.metaKey || e.ctrlKey))) {
+  } else if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     repoInput.focus();
     repoInput.select();
+  } else if (
+    e.key === "/" &&
+    document.activeElement !== repoInput &&
+    document.activeElement !== searchInput
+  ) {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
   }
 });
 
