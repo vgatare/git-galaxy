@@ -374,7 +374,23 @@ function selectStar(idx: number): void {
 
 // ---- Keyboard shortcut --------------------------------------------------
 
+function isEditableFocused(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
+  return el.isContentEditable;
+}
+
 window.addEventListener("keydown", (e) => {
+  // Cmd/Ctrl + K is a global shortcut and works even when typing.
+  if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    repoInput.focus();
+    repoInput.select();
+    return;
+  }
+
+  // Escape always works — closes selection / info panel regardless of focus.
   if (e.key === "Escape") {
     if (selectedIndex >= 0 && active) {
       active.stars.setSizeMultiplier(selectedIndex, 1);
@@ -382,17 +398,16 @@ window.addEventListener("keydown", (e) => {
       selectedIndex = -1;
     }
     hideInfoPanel(infoPanel);
-  } else if (e.key === "r" || e.key === "R") {
+    return;
+  }
+
+  // All other single-character shortcuts are suppressed while a text input is
+  // focused, so users can type freely in the search and launchpad fields.
+  if (isEditableFocused()) return;
+
+  if (e.key === "r" || e.key === "R") {
     if (active) cameraRig.resetView(active.maxRadius);
-  } else if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault();
-    repoInput.focus();
-    repoInput.select();
-  } else if (
-    e.key === "/" &&
-    document.activeElement !== repoInput &&
-    document.activeElement !== searchInput
-  ) {
+  } else if (e.key === "/") {
     e.preventDefault();
     searchInput.focus();
     searchInput.select();

@@ -133,6 +133,9 @@ export function createSearch(
         hide();
       }
     } else if (e.key === "Escape") {
+      // Stop bubbling so the global Escape handler doesn't also clear the
+      // selected star / info panel — Esc in the search only closes the dropdown.
+      e.stopPropagation();
       hide();
       input.blur();
     }
