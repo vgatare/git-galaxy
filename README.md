@@ -21,6 +21,7 @@ Open your own repo and you'll see the answer:
 - Subtle filaments connect parents to children, so a single glance reveals which directories are bursting with content and which are quiet.
 - Recent commits arc across the bottom of the screen — scrub the timeline and watch supernovae flare across the galaxy.
 - Type a filename into the search box and the camera flies straight to that star with a focus-pull animation.
+- Double-click any directory (or pick "Isolate subtree" in the info panel) to hide everything outside that subtree — useful for drilling into one corner of a huge repo.
 
 It's the kind of thing you load up just to look at, and then accidentally lose ten minutes flying around your own codebase.
 
@@ -44,11 +45,13 @@ Open `http://localhost:5173` and type any `owner/repo` into the launchpad. Or pa
 | `right-drag`      | pan                                                          |
 | `hover`           | highlight nearest star                                       |
 | `click`           | focus on star + open info panel (with link to GitHub blob)   |
+| `double-click dir`| isolate that directory's subtree — hide everything else      |
 | `R`               | reset to galaxy-wide view                                    |
+| `A`               | show all stars (clear an active isolation)                   |
 | `Esc`             | clear selection                                              |
 | `Cmd/Ctrl + K`    | jump to repo launchpad                                       |
 | `/`               | jump to file search                                          |
-| `search files…`   | fuzzy-find any file by name — camera flies to it instantly   |
+| `search files…`   | fuzzy-find any file or directory — camera flies to it instantly |
 | timeline scrubber | replay commits — each commit detonates as a colored supernova |
 
 ## How it works

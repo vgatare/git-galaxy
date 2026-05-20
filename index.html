@@ -8,12 +8,23 @@
       name="description"
       content="git-galaxy — fly through any GitHub repository as an interactive 3D galaxy."
     />
-    <meta property="og:title" content="git-galaxy" />
+    <meta property="og:title" content="git-galaxy — fly through any repo" />
     <meta
       property="og:description"
       content="Fly through any GitHub repository as a living 3D galaxy. Files are stars, folders are constellations, commits are supernovae."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://vgatare.github.io/git-galaxy/" />
+    <meta property="og:image" content="https://vgatare.github.io/git-galaxy/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="git-galaxy — fly through any repo" />
+    <meta
+      name="twitter:description"
+      content="Fly through any GitHub repository as a living 3D galaxy. Files are stars, folders are constellations, commits are supernovae."
+    />
+    <meta name="twitter:image" content="https://vgatare.github.io/git-galaxy/og.png" />
     <title>git-galaxy · fly through any repo</title>
   </head>
   <body>
@@ -56,7 +67,7 @@
         <button class="suggest" data-repo="facebook/react">react</button>
         <button class="suggest" data-repo="vercel/next.js">next.js</button>
         <button class="suggest" data-repo="tailwindlabs/tailwindcss">tailwindcss</button>
-        <button class="suggest" data-repo="vincentmanzi02/git-galaxy">git-galaxy</button>
+        <button class="suggest" data-repo="vgatare/git-galaxy">git-galaxy</button>
       </div>
     </header>
 
@@ -67,7 +78,21 @@
       </div>
       <div id="info-path" class="info-path"></div>
       <dl id="info-stats" class="info-stats"></dl>
+      <button
+        id="info-isolate"
+        class="info-action hidden"
+        aria-label="Isolate this directory's subtree"
+      >Isolate subtree</button>
     </aside>
+
+    <div id="isolation-banner" class="isolation-banner hidden" role="status">
+      <span>Showing only </span>
+      <span id="isolation-path" class="isolation-path"></span>
+      <button id="isolation-clear" aria-label="Show the whole galaxy again">
+        Show all
+        <span class="hint">(a)</span>
+      </button>
+    </div>
 
     <aside id="hud-legend" class="hidden">
       <div class="legend-title">Languages</div>

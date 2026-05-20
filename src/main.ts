@@ -43,6 +43,10 @@ const infoName = el<HTMLElement>("info-name");
 const infoPath = el<HTMLElement>("info-path");
 const infoStats = el<HTMLElement>("info-stats");
 const infoClose = el<HTMLButtonElement>("info-close");
+const infoIsolate = el<HTMLButtonElement>("info-isolate");
+const isolationBanner = el<HTMLDivElement>("isolation-banner");
+const isolationPath = el<HTMLElement>("isolation-path");
+const isolationClear = el<HTMLButtonElement>("isolation-clear");
 const legendPanel = el<HTMLElement>("hud-legend");
 const legendList = el<HTMLUListElement>("legend-list");
 const metaEl = el<HTMLDivElement>("meta");
@@ -103,6 +107,7 @@ interface ActiveScene {
 let active: ActiveScene | null = null;
 let highlightedIndex = -1;
 let selectedIndex = -1;
+let isolatedIndex = -1;
 let abortController: AbortController | null = null;
 
 function clearScene(): void {
@@ -114,7 +119,10 @@ function clearScene(): void {
   active = null;
   highlightedIndex = -1;
   selectedIndex = -1;
+  isolatedIndex = -1;
+  isolationBanner.classList.add("hidden");
   hideInfoPanel(infoPanel);
+  infoIsolate.classList.add("hidden");
   legendPanel.classList.add("hidden");
   metaEl.classList.add("hidden");
   timelineCtrl.hide();
@@ -345,6 +353,9 @@ canvas.addEventListener("pointerdown", (e) => {
   lastDownY = e.clientY;
 });
 
+let lastClickIdx = -1;
+let lastClickTime = 0;
+
 canvas.addEventListener("pointerup", (e) => {
   if (!active) return;
   const dx = e.clientX - lastDownX;
@@ -353,6 +364,20 @@ canvas.addEventListener("pointerup", (e) => {
   active.picker.refresh();
   const idx = active.picker.pick(e.clientX, e.clientY, active.visibility);
   if (idx < 0) return;
+
+  // Double-click on a directory isolates its subtree.
+  const now = performance.now();
+  const isDoubleClick =
+    idx === lastClickIdx && now - lastClickTime < 350;
+  lastClickIdx = idx;
+  lastClickTime = now;
+
+  const node = active.galaxy.nodes[idx];
+  if (isDoubleClick && node.kind === "dir" && node.depth > 0) {
+    isolateSubtree(idx);
+    return;
+  }
+
   selectStar(idx);
 });
 
@@ -366,11 +391,92 @@ function selectStar(idx: number): void {
   active.stars.setSizeMultiplier(idx, 1.8);
   const node = active.galaxy.nodes[idx];
   renderInfoPanel(infoPanel, infoName, infoPath, infoStats, node, active.snapshot.meta);
+  updateIsolateButton(idx);
   active.stars.positionOf(idx, tmpPos);
   cameraRig.focusOn(tmpPos, Math.max(12, node.radius * 8));
   // Emit a small supernova on selection.
   supernovas.emit(tmpPos, node.color, Math.max(6, node.radius * 4));
 }
+
+// ---- Isolation ----------------------------------------------------------
+
+function updateIsolateButton(idx: number): void {
+  if (!active) {
+    infoIsolate.classList.add("hidden");
+    return;
+  }
+  const node = active.galaxy.nodes[idx];
+  if (node.kind !== "dir" || node.depth === 0) {
+    infoIsolate.classList.add("hidden");
+    return;
+  }
+  infoIsolate.classList.remove("hidden");
+  if (idx === isolatedIndex) {
+    infoIsolate.textContent = "Show whole galaxy";
+  } else {
+    infoIsolate.textContent = "Isolate subtree";
+  }
+}
+
+function collectDescendants(idx: number): number[] {
+  if (!active) return [];
+  const galaxy = active.galaxy;
+  const root = galaxy.nodes[idx];
+  const out: number[] = [idx];
+  const stack = [root.id];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    const node = galaxy.nodes[galaxy.byId.get(id)!];
+    for (const childId of node.childrenIds) {
+      const childIdx = galaxy.byId.get(childId);
+      if (childIdx === undefined) continue;
+      out.push(childIdx);
+      stack.push(childId);
+    }
+  }
+  return out;
+}
+
+function isolateSubtree(idx: number): void {
+  if (!active) return;
+  const node = active.galaxy.nodes[idx];
+  if (node.kind !== "dir" || node.depth === 0) return;
+  const descendants = collectDescendants(idx);
+  const visible = active.visibility;
+  visible.fill(0);
+  for (const i of descendants) visible[i] = 1;
+  active.stars.setVisibilityMask(visible);
+  isolatedIndex = idx;
+  isolationPath.textContent = node.path || node.name;
+  isolationBanner.classList.remove("hidden");
+  if (idx === selectedIndex) updateIsolateButton(idx);
+  active.stars.positionOf(idx, tmpPos);
+  // Frame the subtree: zoom out a bit for context based on subtree size.
+  const framingDistance = Math.max(40, Math.cbrt(node.subtreeCount + 1) * 22);
+  cameraRig.focusOn(tmpPos, framingDistance);
+}
+
+function clearIsolation(): void {
+  if (!active || isolatedIndex < 0) return;
+  const visible = active.visibility;
+  visible.fill(1);
+  active.stars.setVisibilityMask(visible);
+  const wasIdx = isolatedIndex;
+  isolatedIndex = -1;
+  isolationBanner.classList.add("hidden");
+  if (selectedIndex === wasIdx) updateIsolateButton(wasIdx);
+}
+
+infoIsolate.addEventListener("click", () => {
+  if (!active || selectedIndex < 0) return;
+  if (selectedIndex === isolatedIndex) {
+    clearIsolation();
+  } else {
+    isolateSubtree(selectedIndex);
+  }
+});
+
+isolationClear.addEventListener("click", () => clearIsolation());
 
 // ---- Keyboard shortcut --------------------------------------------------
 
@@ -407,6 +513,8 @@ window.addEventListener("keydown", (e) => {
 
   if (e.key === "r" || e.key === "R") {
     if (active) cameraRig.resetView(active.maxRadius);
+  } else if (e.key === "a" || e.key === "A") {
+    clearIsolation();
   } else if (e.key === "/") {
     e.preventDefault();
     searchInput.focus();
