@@ -1,0 +1,455 @@
+import * as THREE from "three";
+
+import "./style.css";
+
+import {
+  GitHubError,
+  fetchFullSnapshot,
+  parseRepoInput,
+  type FullRepoSnapshot,
+  type RepoSlug,
+} from "./github/api";
+import { buildGalaxy } from "./galaxy/layout";
+import type { GalaxyData } from "./galaxy/types";
+import { createStage } from "./render/scene";
+import { buildNebula } from "./render/nebula";
+import { buildStarField, type StarFieldHandle } from "./render/stars";
+import { buildConnections, type ConnectionsHandle } from "./render/connections";
+import { Supernovas } from "./render/supernova";
+import { createCameraRig } from "./interaction/camera";
+import { StarPicker } from "./interaction/picking";
+import { buildLegend, renderLegend } from "./ui/legend";
+import { hideInfoPanel, renderInfoPanel } from "./ui/info";
+import { createTimeline } from "./ui/timeline";
+import { formatBytes, formatNumber } from "./ui/format";
+
+// ---- DOM lookup helpers -------------------------------------------------
+
+function el<T extends HTMLElement>(id: string): T {
+  const found = document.getElementById(id);
+  if (!found) throw new Error(`Missing #${id}`);
+  return found as T;
+}
+
+const canvas = el<HTMLCanvasElement>("stage");
+const repoForm = el<HTMLFormElement>("repo-form");
+const repoInput = el<HTMLInputElement>("repo-input");
+const launchBtn = el<HTMLButtonElement>("launch-btn");
+const loadingOverlay = el<HTMLDivElement>("loading");
+const loadingText = el<HTMLDivElement>("loading-text");
+const infoPanel = el<HTMLElement>("hud-info");
+const infoName = el<HTMLElement>("info-name");
+const infoPath = el<HTMLElement>("info-path");
+const infoStats = el<HTMLElement>("info-stats");
+const infoClose = el<HTMLButtonElement>("info-close");
+const legendPanel = el<HTMLElement>("hud-legend");
+const legendList = el<HTMLUListElement>("legend-list");
+const metaEl = el<HTMLDivElement>("meta");
+const metaRepo = el<HTMLDivElement>("meta-repo");
+const metaStats = el<HTMLDivElement>("meta-stats");
+const timelineContainer = el<HTMLDivElement>("timeline");
+const timelineRange = el<HTMLInputElement>("timeline-range");
+const timelineLabel = el<HTMLDivElement>("timeline-label");
+const toast = el<HTMLDivElement>("toast");
+
+// ---- Toast --------------------------------------------------------------
+
+let toastTimer: number | null = null;
+function showToast(message: string): void {
+  toast.textContent = message;
+  toast.classList.remove("hidden");
+  if (toastTimer) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toast.classList.add("hidden");
+  }, 4200);
+}
+
+// ---- Loading overlay ----------------------------------------------------
+
+function setLoading(message: string | null): void {
+  if (message) {
+    loadingText.textContent = message;
+    loadingOverlay.classList.remove("hidden");
+  } else {
+    loadingOverlay.classList.add("hidden");
+  }
+}
+
+// ---- Three.js stage -----------------------------------------------------
+
+const stage = createStage(canvas);
+const cameraRig = createCameraRig(stage.camera, canvas);
+const nebula = buildNebula();
+stage.scene.add(nebula.mesh);
+
+const supernovas = new Supernovas();
+stage.scene.add(supernovas.group);
+
+// ---- Active state -------------------------------------------------------
+
+interface ActiveScene {
+  snapshot: FullRepoSnapshot;
+  galaxy: GalaxyData;
+  stars: StarFieldHandle;
+  connections: ConnectionsHandle;
+  picker: StarPicker;
+  visibility: Float32Array;
+  maxRadius: number;
+}
+
+let active: ActiveScene | null = null;
+let highlightedIndex = -1;
+let selectedIndex = -1;
+let abortController: AbortController | null = null;
+
+function clearScene(): void {
+  if (!active) return;
+  stage.scene.remove(active.stars.object);
+  stage.scene.remove(active.connections.object);
+  active.stars.dispose();
+  active.connections.dispose();
+  active = null;
+  highlightedIndex = -1;
+  selectedIndex = -1;
+  hideInfoPanel(infoPanel);
+  legendPanel.classList.add("hidden");
+  metaEl.classList.add("hidden");
+  timelineCtrl.hide();
+}
+
+function setMeta(snapshot: FullRepoSnapshot, galaxy: GalaxyData): void {
+  metaRepo.textContent = snapshot.meta.fullName;
+  const parts = [
+    `${formatNumber(galaxy.fileCount)} files`,
+    `${formatNumber(galaxy.dirCount)} dirs`,
+    `${formatBytes(galaxy.totalBytes)}`,
+    `★ ${formatNumber(snapshot.meta.stars)}`,
+  ];
+  if (snapshot.truncated) parts.push("(tree truncated)");
+  metaStats.textContent = parts.join(" · ");
+  metaEl.classList.remove("hidden");
+}
+
+// ---- Timeline -----------------------------------------------------------
+
+const timelineCtrl = createTimeline(
+  timelineContainer,
+  timelineRange,
+  timelineLabel,
+);
+
+let lastScrubIndex = -1;
+const tmpPos = new THREE.Vector3();
+
+timelineCtrl.onScrub((commit, index) => {
+  if (!active) return;
+  if (index === lastScrubIndex) return;
+  lastScrubIndex = index;
+
+  // Map sha -> node index deterministically.
+  let acc = 0;
+  for (let i = 0; i < commit.sha.length; i++) {
+    acc = (acc * 31 + commit.sha.charCodeAt(i)) >>> 0;
+  }
+  // Prefer files over root.
+  const files = active.galaxy.nodes.filter((n) => n.kind === "file");
+  if (files.length === 0) return;
+  const targetNode = files[acc % files.length];
+  const targetIdx = active.galaxy.byId.get(targetNode.id)!;
+  active.stars.positionOf(targetIdx, tmpPos);
+  supernovas.emit(tmpPos, targetNode.color, Math.max(8, targetNode.radius * 6));
+});
+
+// ---- Repo loading -------------------------------------------------------
+
+function getStoredToken(): string | undefined {
+  try {
+    const t = window.localStorage.getItem("gh_token");
+    return t && t.trim().length > 0 ? t.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadRepo(slug: RepoSlug): Promise<void> {
+  if (abortController) abortController.abort();
+  abortController = new AbortController();
+  const signal = abortController.signal;
+
+  launchBtn.disabled = true;
+  setLoading(`Aiming for ${slug.owner}/${slug.name}…`);
+
+  try {
+    const snapshot = await fetchFullSnapshot(
+      slug,
+      { signal, token: getStoredToken() },
+      (msg) => setLoading(msg),
+    );
+    if (signal.aborted) return;
+
+    setLoading("Composing constellations…");
+    // Allow paint of overlay before heavy work.
+    await new Promise((r) => requestAnimationFrame(r));
+
+    const galaxy = buildGalaxy(snapshot.tree);
+    if (signal.aborted) return;
+
+    clearScene();
+
+    const stars = buildStarField(galaxy);
+    const connections = buildConnections(galaxy);
+    stage.scene.add(connections.object);
+    stage.scene.add(stars.object);
+
+    const picker = new StarPicker(stage.camera, galaxy);
+    picker.setViewport(window.innerWidth, window.innerHeight);
+
+    const visibility = new Float32Array(galaxy.nodes.length).fill(1);
+
+    let maxRadius = 0;
+    for (const n of galaxy.nodes) {
+      const r = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+      if (r > maxRadius) maxRadius = r;
+    }
+
+    active = {
+      snapshot,
+      galaxy,
+      stars,
+      connections,
+      picker,
+      visibility,
+      maxRadius,
+    };
+
+    setMeta(snapshot, galaxy);
+
+    const legendEntries = buildLegend(galaxy);
+    renderLegend(legendList, legendEntries);
+    legendPanel.classList.remove("hidden");
+
+    if (snapshot.commits.length > 0) {
+      timelineCtrl.setCommits(snapshot.commits);
+    } else {
+      timelineCtrl.hide();
+    }
+
+    cameraRig.cinematicEntrance(maxRadius);
+
+    // Update URL so the view is shareable.
+    const url = new URL(window.location.href);
+    url.searchParams.set("repo", `${slug.owner}/${slug.name}`);
+    window.history.replaceState({}, "", url.toString());
+
+    if (snapshot.truncated) {
+      showToast(
+        "This repository is large; the tree was truncated by the GitHub API.",
+      );
+    }
+  } catch (err) {
+    if (signal.aborted) return;
+    let msg = "Failed to load repository.";
+    if (err instanceof GitHubError) {
+      if (err.status === 403) {
+        msg = "GitHub rate-limited the request. Try again in a minute.";
+      } else if (err.status === 404) {
+        msg = "Repository not found or private.";
+      } else {
+        msg = `GitHub error: ${err.message}`;
+      }
+    } else if (err instanceof Error) {
+      msg = err.message;
+    }
+    showToast(msg);
+  } finally {
+    setLoading(null);
+    launchBtn.disabled = false;
+  }
+}
+
+// ---- Form handling ------------------------------------------------------
+
+repoForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const slug = parseRepoInput(repoInput.value);
+  if (!slug) {
+    showToast("Enter a GitHub repo as owner/repo or a github.com URL.");
+    return;
+  }
+  void loadRepo(slug);
+});
+
+document.querySelectorAll<HTMLButtonElement>(".suggest").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.repo ?? "";
+    const slug = parseRepoInput(target);
+    if (!slug) return;
+    repoInput.value = `${slug.owner}/${slug.name}`;
+    void loadRepo(slug);
+  });
+});
+
+infoClose.addEventListener("click", () => {
+  hideInfoPanel(infoPanel);
+  if (active && selectedIndex >= 0) {
+    active.stars.setSizeMultiplier(selectedIndex, 1);
+  }
+  selectedIndex = -1;
+  if (active) {
+    active.stars.setHighlight(-1);
+  }
+});
+
+// ---- Mouse interaction --------------------------------------------------
+
+const mouse = { x: 0, y: 0, inside: false };
+
+canvas.addEventListener("pointermove", (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.inside = true;
+});
+
+canvas.addEventListener("pointerleave", () => {
+  mouse.inside = false;
+  if (active && highlightedIndex >= 0 && highlightedIndex !== selectedIndex) {
+    active.stars.setSizeMultiplier(highlightedIndex, 1);
+  }
+  highlightedIndex = -1;
+  if (active && selectedIndex < 0) active.stars.setHighlight(-1);
+});
+
+let lastDownX = 0;
+let lastDownY = 0;
+canvas.addEventListener("pointerdown", (e) => {
+  lastDownX = e.clientX;
+  lastDownY = e.clientY;
+});
+
+canvas.addEventListener("pointerup", (e) => {
+  if (!active) return;
+  const dx = e.clientX - lastDownX;
+  const dy = e.clientY - lastDownY;
+  if (dx * dx + dy * dy > 25) return; // dragged, not clicked
+  active.picker.refresh();
+  const idx = active.picker.pick(e.clientX, e.clientY, active.visibility);
+  if (idx < 0) return;
+  selectStar(idx);
+});
+
+function selectStar(idx: number): void {
+  if (!active) return;
+  if (selectedIndex >= 0 && selectedIndex !== idx) {
+    active.stars.setSizeMultiplier(selectedIndex, 1);
+  }
+  selectedIndex = idx;
+  active.stars.setHighlight(idx);
+  active.stars.setSizeMultiplier(idx, 1.8);
+  const node = active.galaxy.nodes[idx];
+  renderInfoPanel(infoPanel, infoName, infoPath, infoStats, node, active.snapshot.meta);
+  active.stars.positionOf(idx, tmpPos);
+  cameraRig.focusOn(tmpPos, Math.max(12, node.radius * 8));
+  // Emit a small supernova on selection.
+  supernovas.emit(tmpPos, node.color, Math.max(6, node.radius * 4));
+}
+
+// ---- Keyboard shortcut --------------------------------------------------
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (selectedIndex >= 0 && active) {
+      active.stars.setSizeMultiplier(selectedIndex, 1);
+      active.stars.setHighlight(-1);
+      selectedIndex = -1;
+    }
+    hideInfoPanel(infoPanel);
+  } else if (e.key === "r" || e.key === "R") {
+    if (active) cameraRig.resetView(active.maxRadius);
+  } else if (e.key === "/" || (e.key === "k" && (e.metaKey || e.ctrlKey))) {
+    e.preventDefault();
+    repoInput.focus();
+    repoInput.select();
+  }
+});
+
+// ---- Resize -------------------------------------------------------------
+
+function onResize(): void {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  stage.resize(w, h);
+  nebula.resize(w, h);
+  if (active) {
+    active.picker.setViewport(w, h);
+    active.stars.material.uniforms.uViewport.value = h * 0.5;
+    active.stars.material.uniforms.uPixelRatio.value = Math.min(
+      2,
+      window.devicePixelRatio || 1,
+    );
+  }
+}
+window.addEventListener("resize", onResize);
+
+// ---- Animation loop -----------------------------------------------------
+
+const clock = new THREE.Clock();
+let frameCount = 0;
+
+function animate(): void {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.1, clock.getDelta());
+  const t = clock.elapsedTime;
+
+  nebula.tick(t);
+  cameraRig.tick(dt);
+  supernovas.tick(dt, stage.camera.quaternion);
+
+  if (active) {
+    active.stars.tick(t);
+
+    // Cheap hover picking every other frame.
+    if (mouse.inside && frameCount % 2 === 0) {
+      active.picker.refresh();
+      const idx = active.picker.pick(mouse.x, mouse.y, active.visibility);
+      if (idx !== highlightedIndex) {
+        if (
+          highlightedIndex >= 0 &&
+          highlightedIndex !== selectedIndex
+        ) {
+          active.stars.setSizeMultiplier(highlightedIndex, 1);
+        }
+        highlightedIndex = idx;
+        if (idx >= 0) {
+          if (idx !== selectedIndex) {
+            active.stars.setSizeMultiplier(idx, 1.5);
+          }
+          if (selectedIndex < 0) active.stars.setHighlight(idx);
+          canvas.style.cursor = "pointer";
+        } else {
+          if (selectedIndex < 0) active.stars.setHighlight(-1);
+          canvas.style.cursor = "";
+        }
+      }
+    }
+  }
+
+  stage.composer.render(dt);
+  frameCount++;
+}
+
+// ---- Boot ---------------------------------------------------------------
+
+function bootstrap(): void {
+  onResize();
+  animate();
+
+  const params = new URLSearchParams(window.location.search);
+  const initial = params.get("repo") ?? "mrdoob/three.js";
+  const slug = parseRepoInput(initial);
+  if (slug) {
+    repoInput.value = `${slug.owner}/${slug.name}`;
+    void loadRepo(slug);
+  }
+}
+
+bootstrap();

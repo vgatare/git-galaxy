@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="git-galaxy — fly through any GitHub repository as an interactive 3D galaxy."
+    />
+    <meta property="og:title" content="git-galaxy" />
+    <meta
+      property="og:description"
+      content="Fly through any GitHub repository as a living 3D galaxy. Files are stars, folders are constellations, commits are supernovae."
+    />
+    <meta property="og:type" content="website" />
+    <title>git-galaxy · fly through any repo</title>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <div id="loading" class="overlay hidden" aria-live="polite">
+      <div class="ring"></div>
+      <div id="loading-text">Charting the galaxy…</div>
+    </div>
+
+    <header id="hud-top">
+      <div class="title">
+        <span class="logo">✦</span>
+        <span class="brand">git-galaxy</span>
+      </div>
+      <form id="repo-form" autocomplete="off">
+        <input
+          id="repo-input"
+          name="repo"
+          type="text"
+          spellcheck="false"
+          placeholder="owner/repo  (e.g. torvalds/linux)"
+          aria-label="GitHub repository in owner/repo form"
+        />
+        <button type="submit" id="launch-btn">Launch</button>
+      </form>
+      <div class="hint">
+        Try
+        <button class="suggest" data-repo="mrdoob/three.js">three.js</button>
+        <button class="suggest" data-repo="facebook/react">react</button>
+        <button class="suggest" data-repo="vercel/next.js">next.js</button>
+        <button class="suggest" data-repo="tailwindlabs/tailwindcss">tailwindcss</button>
+        <button class="suggest" data-repo="vincentmanzi02/git-galaxy">git-galaxy</button>
+      </div>
+    </header>
+
+    <aside id="hud-info" class="hidden">
+      <div class="info-header">
+        <div id="info-name" class="info-name"></div>
+        <button id="info-close" aria-label="Close info">×</button>
+      </div>
+      <div id="info-path" class="info-path"></div>
+      <dl id="info-stats" class="info-stats"></dl>
+    </aside>
+
+    <aside id="hud-legend" class="hidden">
+      <div class="legend-title">Languages</div>
+      <ul id="legend-list"></ul>
+    </aside>
+
+    <footer id="hud-bottom">
+      <div id="meta" class="meta hidden">
+        <div class="meta-row">
+          <span id="meta-repo" class="meta-repo"></span>
+          <span id="meta-stats" class="meta-stats"></span>
+        </div>
+        <div id="timeline" class="timeline hidden">
+          <input
+            id="timeline-range"
+            type="range"
+            min="0"
+            max="100"
+            value="100"
+            step="1"
+            aria-label="Commit history scrubber"
+          />
+          <div id="timeline-label" class="timeline-label"></div>
+        </div>
+      </div>
+      <div class="controls-help">
+        drag · orbit ✦ scroll · zoom ✦ hover · inspect ✦ click · focus
+      </div>
+    </footer>
+
+    <div id="toast" class="toast hidden" role="alert"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
