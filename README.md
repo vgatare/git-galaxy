@@ -19,6 +19,7 @@ Open your own repo and you'll see the answer:
 - The shape of every directory becomes a tilted constellation, recursively nesting like a real galactic structure.
 - Each file is a star whose **color is its language** and whose **brightness grows with size**.
 - Subtle filaments connect parents to children, so a single glance reveals which directories are bursting with content and which are quiet.
+- Every directory wears its name as a floating label — top-level packages glow brightest, deep nested ones fade in only when you get close.
 - Recent commits arc across the bottom of the screen — scrub the timeline and watch supernovae flare across the galaxy.
 - Type a filename into the search box and the camera flies straight to that star with a focus-pull animation.
 - Double-click any directory (or pick "Isolate subtree" in the info panel) to hide everything outside that subtree — useful for drilling into one corner of a huge repo.

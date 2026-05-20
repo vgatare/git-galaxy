@@ -22,6 +22,7 @@ import { buildLegend, renderLegend } from "./ui/legend";
 import { hideInfoPanel, renderInfoPanel } from "./ui/info";
 import { createTimeline } from "./ui/timeline";
 import { createSearch } from "./ui/search";
+import { createLabels } from "./ui/labels";
 import { formatBytes, formatNumber } from "./ui/format";
 
 // ---- DOM lookup helpers -------------------------------------------------
@@ -57,6 +58,7 @@ const timelineRange = el<HTMLInputElement>("timeline-range");
 const timelineLabel = el<HTMLDivElement>("timeline-label");
 const searchInput = el<HTMLInputElement>("search-input");
 const searchResults = el<HTMLDivElement>("search-results");
+const labelsContainer = el<HTMLDivElement>("labels");
 const toast = el<HTMLDivElement>("toast");
 
 // ---- Toast --------------------------------------------------------------
@@ -91,6 +93,8 @@ stage.scene.add(nebula.mesh);
 
 const supernovas = new Supernovas();
 stage.scene.add(supernovas.group);
+
+const labels = createLabels(labelsContainer);
 
 // ---- Active state -------------------------------------------------------
 
@@ -128,6 +132,7 @@ function clearScene(): void {
   timelineCtrl.hide();
   searchCtrl.setGalaxy(null);
   searchCtrl.setEnabled(false);
+  labels.clear();
 }
 
 function setMeta(snapshot: FullRepoSnapshot, galaxy: GalaxyData): void {
@@ -260,6 +265,9 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
 
     searchCtrl.setGalaxy(galaxy);
     searchCtrl.setEnabled(true);
+
+    labels.setGalaxy(galaxy);
+    labels.setVisibilityMask(visibility);
 
     cameraRig.cinematicEntrance(maxRadius);
 
@@ -584,6 +592,9 @@ function animate(): void {
   }
 
   stage.composer.render(dt);
+  if (active) {
+    labels.update(stage.camera, window.innerWidth, window.innerHeight);
+  }
   frameCount++;
 }
 
