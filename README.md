@@ -4,7 +4,7 @@
 
 Files are stars. Directories are constellations. Commits ripple as supernovae across a timeline you can scrub. It all runs in the browser, in WebGL, with no backend.
 
-**Live demo:** _add your deploy URL here_
+**Live demo:** [vgatare.github.io/git-galaxy](https://vgatare.github.io/git-galaxy/) — try `?repo=tailwindlabs/tailwindcss`, `?repo=vercel/next.js`, or any GitHub repo.
 
 ![git-galaxy hero screenshot](docs/hero.png)
 
