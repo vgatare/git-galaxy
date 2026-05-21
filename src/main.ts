@@ -21,6 +21,9 @@ import { StarPicker } from "./interaction/picking";
 import { buildLegend, renderLegend } from "./ui/legend";
 import { hideInfoPanel, renderInfoPanel } from "./ui/info";
 import { createTimeline } from "./ui/timeline";
+import { createSearch } from "./ui/search";
+import { createLabels } from "./ui/labels";
+import { createViewer } from "./ui/viewer";
 import { formatBytes, formatNumber } from "./ui/format";
 
 // ---- DOM lookup helpers -------------------------------------------------
@@ -42,6 +45,10 @@ const infoName = el<HTMLElement>("info-name");
 const infoPath = el<HTMLElement>("info-path");
 const infoStats = el<HTMLElement>("info-stats");
 const infoClose = el<HTMLButtonElement>("info-close");
+const infoIsolate = el<HTMLButtonElement>("info-isolate");
+const isolationBanner = el<HTMLDivElement>("isolation-banner");
+const isolationPath = el<HTMLElement>("isolation-path");
+const isolationClear = el<HTMLButtonElement>("isolation-clear");
 const legendPanel = el<HTMLElement>("hud-legend");
 const legendList = el<HTMLUListElement>("legend-list");
 const metaEl = el<HTMLDivElement>("meta");
@@ -50,6 +57,16 @@ const metaStats = el<HTMLDivElement>("meta-stats");
 const timelineContainer = el<HTMLDivElement>("timeline");
 const timelineRange = el<HTMLInputElement>("timeline-range");
 const timelineLabel = el<HTMLDivElement>("timeline-label");
+const searchInput = el<HTMLInputElement>("search-input");
+const searchResults = el<HTMLDivElement>("search-results");
+const labelsContainer = el<HTMLDivElement>("labels");
+const viewerRoot = el<HTMLDivElement>("viewer");
+const viewerCard = el<HTMLDivElement>("viewer").querySelector(".viewer-card") as HTMLDivElement;
+const viewerTitle = el<HTMLDivElement>("viewer-title");
+const viewerSubtitle = el<HTMLDivElement>("viewer-subtitle");
+const viewerBody = el<HTMLDivElement>("viewer-body");
+const viewerClose = el<HTMLButtonElement>("viewer-close");
+const viewerGithub = el<HTMLAnchorElement>("viewer-github");
 const toast = el<HTMLDivElement>("toast");
 
 // ---- Toast --------------------------------------------------------------
@@ -85,6 +102,29 @@ stage.scene.add(nebula.mesh);
 const supernovas = new Supernovas();
 stage.scene.add(supernovas.group);
 
+const labels = createLabels(labelsContainer);
+
+const viewer = createViewer(
+  {
+    root: viewerRoot,
+    card: viewerCard,
+    title: viewerTitle,
+    subtitle: viewerSubtitle,
+    body: viewerBody,
+    closeBtn: viewerClose,
+    githubLink: viewerGithub,
+  },
+  {
+    onPickNode(nodeId) {
+      if (!active) return;
+      const idx = active.galaxy.byId.get(nodeId);
+      if (idx === undefined) return;
+      selectStar(idx);
+      viewer.open(active.galaxy.nodes[idx], active.snapshot.meta, active.galaxy);
+    },
+  },
+);
+
 // ---- Active state -------------------------------------------------------
 
 interface ActiveScene {
@@ -100,6 +140,7 @@ interface ActiveScene {
 let active: ActiveScene | null = null;
 let highlightedIndex = -1;
 let selectedIndex = -1;
+let isolatedIndex = -1;
 let abortController: AbortController | null = null;
 
 function clearScene(): void {
@@ -111,10 +152,17 @@ function clearScene(): void {
   active = null;
   highlightedIndex = -1;
   selectedIndex = -1;
+  isolatedIndex = -1;
+  isolationBanner.classList.add("hidden");
   hideInfoPanel(infoPanel);
+  infoIsolate.classList.add("hidden");
   legendPanel.classList.add("hidden");
   metaEl.classList.add("hidden");
   timelineCtrl.hide();
+  searchCtrl.setGalaxy(null);
+  searchCtrl.setEnabled(false);
+  labels.clear();
+  viewer.close();
 }
 
 function setMeta(snapshot: FullRepoSnapshot, galaxy: GalaxyData): void {
@@ -137,6 +185,17 @@ const timelineCtrl = createTimeline(
   timelineRange,
   timelineLabel,
 );
+
+// ---- Search ------------------------------------------------------------
+
+const searchCtrl = createSearch(searchInput, searchResults);
+searchCtrl.setEnabled(false);
+searchCtrl.onPick((hit) => {
+  if (!active) return;
+  const idx = active.galaxy.byId.get(hit.node.id);
+  if (idx === undefined) return;
+  selectStar(idx);
+});
 
 let lastScrubIndex = -1;
 const tmpPos = new THREE.Vector3();
@@ -234,6 +293,12 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
       timelineCtrl.hide();
     }
 
+    searchCtrl.setGalaxy(galaxy);
+    searchCtrl.setEnabled(true);
+
+    labels.setGalaxy(galaxy);
+    labels.setVisibilityMask(visibility);
+
     cameraRig.cinematicEntrance(maxRadius);
 
     // Update URL so the view is shareable.
@@ -326,6 +391,9 @@ canvas.addEventListener("pointerdown", (e) => {
   lastDownY = e.clientY;
 });
 
+let lastClickIdx = -1;
+let lastClickTime = 0;
+
 canvas.addEventListener("pointerup", (e) => {
   if (!active) return;
   const dx = e.clientX - lastDownX;
@@ -334,6 +402,20 @@ canvas.addEventListener("pointerup", (e) => {
   active.picker.refresh();
   const idx = active.picker.pick(e.clientX, e.clientY, active.visibility);
   if (idx < 0) return;
+
+  // Double-click on a directory isolates its subtree.
+  const now = performance.now();
+  const isDoubleClick =
+    idx === lastClickIdx && now - lastClickTime < 350;
+  lastClickIdx = idx;
+  lastClickTime = now;
+
+  const node = active.galaxy.nodes[idx];
+  if (isDoubleClick && node.kind === "dir" && node.depth > 0) {
+    isolateSubtree(idx);
+    return;
+  }
+
   selectStar(idx);
 });
 
@@ -346,29 +428,144 @@ function selectStar(idx: number): void {
   active.stars.setHighlight(idx);
   active.stars.setSizeMultiplier(idx, 1.8);
   const node = active.galaxy.nodes[idx];
-  renderInfoPanel(infoPanel, infoName, infoPath, infoStats, node, active.snapshot.meta);
+  renderInfoPanel(infoPanel, infoName, infoPath, infoStats, node, active.snapshot.meta, {
+    onOpen: () => {
+      if (!active) return;
+      viewer.open(node, active.snapshot.meta, active.galaxy);
+    },
+  });
+  updateIsolateButton(idx);
   active.stars.positionOf(idx, tmpPos);
   cameraRig.focusOn(tmpPos, Math.max(12, node.radius * 8));
   // Emit a small supernova on selection.
   supernovas.emit(tmpPos, node.color, Math.max(6, node.radius * 4));
 }
 
+// ---- Isolation ----------------------------------------------------------
+
+function updateIsolateButton(idx: number): void {
+  if (!active) {
+    infoIsolate.classList.add("hidden");
+    return;
+  }
+  const node = active.galaxy.nodes[idx];
+  if (node.kind !== "dir" || node.depth === 0) {
+    infoIsolate.classList.add("hidden");
+    return;
+  }
+  infoIsolate.classList.remove("hidden");
+  if (idx === isolatedIndex) {
+    infoIsolate.textContent = "Show whole galaxy";
+  } else {
+    infoIsolate.textContent = "Isolate subtree";
+  }
+}
+
+function collectDescendants(idx: number): number[] {
+  if (!active) return [];
+  const galaxy = active.galaxy;
+  const root = galaxy.nodes[idx];
+  const out: number[] = [idx];
+  const stack = [root.id];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    const node = galaxy.nodes[galaxy.byId.get(id)!];
+    for (const childId of node.childrenIds) {
+      const childIdx = galaxy.byId.get(childId);
+      if (childIdx === undefined) continue;
+      out.push(childIdx);
+      stack.push(childId);
+    }
+  }
+  return out;
+}
+
+function isolateSubtree(idx: number): void {
+  if (!active) return;
+  const node = active.galaxy.nodes[idx];
+  if (node.kind !== "dir" || node.depth === 0) return;
+  const descendants = collectDescendants(idx);
+  const visible = active.visibility;
+  visible.fill(0);
+  for (const i of descendants) visible[i] = 1;
+  active.stars.setVisibilityMask(visible);
+  isolatedIndex = idx;
+  isolationPath.textContent = node.path || node.name;
+  isolationBanner.classList.remove("hidden");
+  if (idx === selectedIndex) updateIsolateButton(idx);
+  active.stars.positionOf(idx, tmpPos);
+  // Frame the subtree: zoom out a bit for context based on subtree size.
+  const framingDistance = Math.max(40, Math.cbrt(node.subtreeCount + 1) * 22);
+  cameraRig.focusOn(tmpPos, framingDistance);
+}
+
+function clearIsolation(): void {
+  if (!active || isolatedIndex < 0) return;
+  const visible = active.visibility;
+  visible.fill(1);
+  active.stars.setVisibilityMask(visible);
+  const wasIdx = isolatedIndex;
+  isolatedIndex = -1;
+  isolationBanner.classList.add("hidden");
+  if (selectedIndex === wasIdx) updateIsolateButton(wasIdx);
+}
+
+infoIsolate.addEventListener("click", () => {
+  if (!active || selectedIndex < 0) return;
+  if (selectedIndex === isolatedIndex) {
+    clearIsolation();
+  } else {
+    isolateSubtree(selectedIndex);
+  }
+});
+
+isolationClear.addEventListener("click", () => clearIsolation());
+
 // ---- Keyboard shortcut --------------------------------------------------
 
+function isEditableFocused(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
+  return el.isContentEditable;
+}
+
 window.addEventListener("keydown", (e) => {
+  // Cmd/Ctrl + K is a global shortcut and works even when typing.
+  if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    repoInput.focus();
+    repoInput.select();
+    return;
+  }
+
+  // Escape always works — closes viewer first, then selection / info panel.
   if (e.key === "Escape") {
+    if (viewer.isOpen()) {
+      viewer.close();
+      return;
+    }
     if (selectedIndex >= 0 && active) {
       active.stars.setSizeMultiplier(selectedIndex, 1);
       active.stars.setHighlight(-1);
       selectedIndex = -1;
     }
     hideInfoPanel(infoPanel);
-  } else if (e.key === "r" || e.key === "R") {
+    return;
+  }
+
+  // All other single-character shortcuts are suppressed while a text input is
+  // focused, so users can type freely in the search and launchpad fields.
+  if (isEditableFocused()) return;
+
+  if (e.key === "r" || e.key === "R") {
     if (active) cameraRig.resetView(active.maxRadius);
-  } else if (e.key === "/" || (e.key === "k" && (e.metaKey || e.ctrlKey))) {
+  } else if (e.key === "a" || e.key === "A") {
+    clearIsolation();
+  } else if (e.key === "/") {
     e.preventDefault();
-    repoInput.focus();
-    repoInput.select();
+    searchInput.focus();
+    searchInput.select();
   }
 });
 
@@ -434,6 +631,9 @@ function animate(): void {
   }
 
   stage.composer.render(dt);
+  if (active) {
+    labels.update(stage.camera, window.innerWidth, window.innerHeight);
+  }
   frameCount++;
 }
 

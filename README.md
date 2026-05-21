@@ -4,7 +4,7 @@
 
 Files are stars. Directories are constellations. Commits ripple as supernovae across a timeline you can scrub. It all runs in the browser, in WebGL, with no backend.
 
-**Live demo:** _add your deploy URL here_
+**Live demo:** [vgatare.github.io/git-galaxy](https://vgatare.github.io/git-galaxy/) — try `?repo=tailwindlabs/tailwindcss`, `?repo=vercel/next.js`, or any GitHub repo.
 
 ![git-galaxy hero screenshot](docs/hero.png)
 
@@ -19,7 +19,11 @@ Open your own repo and you'll see the answer:
 - The shape of every directory becomes a tilted constellation, recursively nesting like a real galactic structure.
 - Each file is a star whose **color is its language** and whose **brightness grows with size**.
 - Subtle filaments connect parents to children, so a single glance reveals which directories are bursting with content and which are quiet.
+- Every directory wears its name as a floating label — top-level packages glow brightest, deep nested ones fade in only when you get close.
 - Recent commits arc across the bottom of the screen — scrub the timeline and watch supernovae flare across the galaxy.
+- Type a filename into the search box and the camera flies straight to that star with a focus-pull animation.
+- Double-click any directory (or pick "Isolate subtree" in the info panel) to hide everything outside that subtree — useful for drilling into one corner of a huge repo.
+- Click any file or folder to open a translucent **in-galaxy content viewer** — files render with syntax-aware line numbers, READMEs render as live markdown, and directory listings let you drill straight in without ever leaving for GitHub.
 
 It's the kind of thing you load up just to look at, and then accidentally lose ten minutes flying around your own codebase.
 
@@ -43,9 +47,13 @@ Open `http://localhost:5173` and type any `owner/repo` into the launchpad. Or pa
 | `right-drag`      | pan                                                          |
 | `hover`           | highlight nearest star                                       |
 | `click`           | focus on star + open info panel (with link to GitHub blob)   |
+| `double-click dir`| isolate that directory's subtree — hide everything else      |
 | `R`               | reset to galaxy-wide view                                    |
+| `A`               | show all stars (clear an active isolation)                   |
 | `Esc`             | clear selection                                              |
 | `Cmd/Ctrl + K`    | jump to repo launchpad                                       |
+| `/`               | jump to file search                                          |
+| `search files…`   | fuzzy-find any file or directory — camera flies to it instantly |
 | timeline scrubber | replay commits — each commit detonates as a colored supernova |
 
 ## How it works
