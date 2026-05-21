@@ -542,3 +542,45 @@ canvas#stage:active {
     display: none;
   }
 }
+
+/* ---- Audio toggle ----------------------------------------------------- */
+
+.audio-btn {
+  position: fixed;
+  bottom: 16px;
+  right: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.audio-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(125, 212, 255, 0.3);
+}
+
+.audio-btn.active {
+  color: var(--accent);
+  background: rgba(125, 212, 255, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 16px rgba(125, 212, 255, 0.4);
+  animation: audio-pulse 2s ease-in-out infinite;
+}
+
+@keyframes audio-pulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(125, 212, 255, 0.4); }
+  50% { box-shadow: 0 0 24px rgba(125, 212, 255, 0.6); }
+}

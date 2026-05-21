@@ -22,6 +22,10 @@ import { buildLegend, renderLegend } from "./ui/legend";
 import { hideInfoPanel, renderInfoPanel } from "./ui/info";
 import { createTimeline } from "./ui/timeline";
 import { formatBytes, formatNumber } from "./ui/format";
+import { createWarp } from "./render/warp";
+import { createBlackHoleSystem } from "./render/blackhole";
+import { createCometSystem } from "./render/comets";
+import { createSonification } from "./audio/sonification";
 
 // ---- DOM lookup helpers -------------------------------------------------
 
@@ -51,6 +55,7 @@ const timelineContainer = el<HTMLDivElement>("timeline");
 const timelineRange = el<HTMLInputElement>("timeline-range");
 const timelineLabel = el<HTMLDivElement>("timeline-label");
 const toast = el<HTMLDivElement>("toast");
+const audioToggle = el<HTMLButtonElement>("audio-toggle");
 
 // ---- Toast --------------------------------------------------------------
 
@@ -85,6 +90,24 @@ stage.scene.add(nebula.mesh);
 const supernovas = new Supernovas();
 stage.scene.add(supernovas.group);
 
+const warp = createWarp();
+const blackHoles = createBlackHoleSystem();
+const cometSystem = createCometSystem();
+const sonification = createSonification();
+
+// Insert custom post-processing (after bloom, before output)
+stage.composer.insertPass(blackHoles.lensingPass, 2);
+stage.composer.insertPass(warp.pass, 3);
+
+stage.scene.add(blackHoles.group);
+stage.scene.add(cometSystem.object);
+
+audioToggle.addEventListener("click", () => {
+  const enabled = sonification.toggle();
+  audioToggle.classList.toggle("active", enabled);
+  audioToggle.title = enabled ? "Mute ambient sound" : "Enable ambient sound";
+});
+
 // ---- Active state -------------------------------------------------------
 
 interface ActiveScene {
@@ -108,6 +131,8 @@ function clearScene(): void {
   stage.scene.remove(active.connections.object);
   active.stars.dispose();
   active.connections.dispose();
+  blackHoles.clearGalaxy();
+  cometSystem.clear();
   active = null;
   highlightedIndex = -1;
   selectedIndex = -1;
@@ -158,6 +183,7 @@ timelineCtrl.onScrub((commit, index) => {
   const targetIdx = active.galaxy.byId.get(targetNode.id)!;
   active.stars.positionOf(targetIdx, tmpPos);
   supernovas.emit(tmpPos, targetNode.color, Math.max(8, targetNode.radius * 6));
+  sonification.playSupernova();
 });
 
 // ---- Repo loading -------------------------------------------------------
@@ -233,6 +259,10 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
     } else {
       timelineCtrl.hide();
     }
+
+    blackHoles.setGalaxy(galaxy);
+    cometSystem.setGalaxy(galaxy);
+    sonification.setGalaxy(galaxy.nodes);
 
     cameraRig.cinematicEntrance(maxRadius);
 
@@ -351,6 +381,9 @@ function selectStar(idx: number): void {
   cameraRig.focusOn(tmpPos, Math.max(12, node.radius * 8));
   // Emit a small supernova on selection.
   supernovas.emit(tmpPos, node.color, Math.max(6, node.radius * 4));
+  warp.activate(0.8);
+  sonification.playSelect();
+  sonification.playWarp();
 }
 
 // ---- Keyboard shortcut --------------------------------------------------
@@ -403,6 +436,15 @@ function animate(): void {
   nebula.tick(t);
   cameraRig.tick(dt);
   supernovas.tick(dt, stage.camera.quaternion);
+
+  warp.tick(dt, t);
+  blackHoles.tick(t, stage.camera, window.innerWidth, window.innerHeight);
+  cometSystem.tick(dt);
+  sonification.tick(
+    stage.camera.position.x,
+    stage.camera.position.y,
+    stage.camera.position.z,
+  );
 
   if (active) {
     active.stars.tick(t);

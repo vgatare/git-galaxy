@@ -42,10 +42,11 @@ Open `http://localhost:5173` and type any `owner/repo` into the launchpad. Or pa
 | `scroll`          | zoom                                                         |
 | `right-drag`      | pan                                                          |
 | `hover`           | highlight nearest star                                       |
-| `click`           | focus on star + open info panel (with link to GitHub blob)   |
+| `click`           | **warp** to star + open info panel (with link to GitHub blob) |
 | `R`               | reset to galaxy-wide view                                    |
 | `Esc`             | clear selection                                              |
 | `Cmd/Ctrl + K`    | jump to repo launchpad                                       |
+| `♪` button        | toggle ambient sonification                                   |
 | timeline scrubber | replay commits — each commit detonates as a colored supernova |
 
 ## How it works
@@ -63,7 +64,7 @@ GitHub REST API
   GPU points cloud (custom GLSL shaders)
        │
        ▼
-  EffectComposer ─► UnrealBloomPass ─► OutputPass
+  EffectComposer ─► UnrealBloomPass ─► LensingPass ─► WarpPass ─► OutputPass
 ```
 
 ### Layout
@@ -76,6 +77,22 @@ Stars are a single `THREE.Points` with custom GLSL — soft cores, gaussian halo
 
 The background is a procedural nebula shader — two layers of FBM noise modulated by a deep-space gradient and sparkled with hash-based background stars. See [`src/render/shaders/nebula.frag.glsl`](src/render/shaders/nebula.frag.glsl).
 
+### Black Holes & Gravitational Lensing
+
+The largest directories become black holes — complete with accretion disks (procedural GLSL with Doppler shifting, turbulence, and temperature gradients) and real-time gravitational lensing via a post-processing shader. The lensing distorts the rendered frame around each black hole's screen-space position using a simplified Schwarzschild metric, with photon sphere glow and Einstein ring effects. See [`src/render/blackhole.ts`](src/render/blackhole.ts) and [`src/render/shaders/lensing.frag.glsl`](src/render/shaders/lensing.frag.glsl).
+
+### Warp Drive
+
+Clicking a star triggers a hyperspace-style warp effect — radial motion blur, procedural star streaks at multiple angular frequencies, and chromatic aberration, all in a single post-processing pass. The intensity follows a bell curve: ramp up, hold, ramp down. See [`src/render/warp.ts`](src/render/warp.ts) and [`src/render/shaders/warp.frag.glsl`](src/render/shaders/warp.frag.glsl).
+
+### Ambient Sonification
+
+Toggle the `♪` button and the galaxy plays music. A warm C2 pad drone provides the base layer. Pentatonic tones modulate in volume based on camera proximity to clusters of each language type — fly near the TypeScript cluster and you hear different harmonics than near the Python region. Clicking a star plays a bell tone, warping plays a filter-swept whoosh, and supernovae trigger low booms with metallic shimmers. All synthesis is procedural via the Web Audio API — no audio files, no external dependencies. See [`src/audio/sonification.ts`](src/audio/sonification.ts).
+
+### Comet Trails
+
+Eight comets perpetually traverse the galaxy along quadratic Bézier curves between random stars, each with a 40-particle fading trail. When a comet reaches its target, it picks a new destination and continues. The effect makes the galaxy feel alive even when idle. See [`src/render/comets.ts`](src/render/comets.ts).
+
 ### Picking
 
 `Raycaster` against a custom `Points` shader gets you nowhere — point sizes aren't reflected in the raycaster's hit-testing. So `git-galaxy` projects every star to screen space once per frame and does a pixel-radius nearest-neighbour search. See [`src/interaction/picking.ts`](src/interaction/picking.ts).
@@ -87,7 +104,7 @@ The background is a procedural nebula shader — two layers of FBM noise modulat
 - [Vite](https://vitejs.dev/) for the dev server and build
 - No backend — the entire app is static, talking directly to the GitHub REST API from the browser
 
-The whole production bundle is ~140 KB gzipped.
+The whole production bundle is ~143 KB gzipped.
 
 ## Hitting rate limits?
 
@@ -101,13 +118,15 @@ The app picks up `gh_token` from `localStorage` and uses it as a bearer for high
 
 ## Architecture notes for the curious
 
-The whole thing is intentionally short. Around 1,200 lines of TypeScript + ~150 lines of GLSL.
+The whole thing is intentionally short. Around 1,800 lines of TypeScript + ~300 lines of GLSL.
 
 ```
 src/
 ├── github/        REST client, repo tree / languages / commits
 ├── galaxy/        tree-building, recursive layout, language colors
-├── render/        Three.js stage, stars, nebula, connections, supernovae
+├── render/        Three.js stage, stars, nebula, connections, supernovae,
+│                  warp drive, black holes, comets
+├── audio/         Web Audio API ambient sonification
 ├── interaction/   orbit camera, fly-to, raycaster-free picking
 └── ui/            HUD: launchpad, legend, info panel, timeline
 ```
@@ -121,7 +140,7 @@ The natural directions are:
 - **Real commit replay** — fetch the file-level diff for each commit and animate file births/deaths as actual events instead of hashed supernovae.
 - **Cross-repo galaxies** — multiple repos in the same scene, gravitationally arranged by their dependency graph.
 - **Embeddable mode** — a `?embed=1` flag plus a slim CSS reset so any repo can drop their own galaxy into a README via an iframe.
-- **Audio-reactive mode** — Web Audio analyser drives star twinkle. Yes really.
+- **Audio-reactive mode** — feed the sonification output back to the visuals so star brightness pulses with the sound.
 
 Open an issue or send a PR.
 
