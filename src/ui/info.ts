@@ -2,6 +2,11 @@ import type { GalaxyNode } from "../galaxy/types";
 import type { RepoMeta } from "../github/types";
 import { formatBytes, formatNumber } from "./format";
 
+export interface InfoPanelHooks {
+  /** Click handler for the path → opens the in-galaxy viewer. */
+  onOpen(): void;
+}
+
 export function renderInfoPanel(
   panel: HTMLElement,
   nameEl: HTMLElement,
@@ -9,28 +14,18 @@ export function renderInfoPanel(
   statsEl: HTMLElement,
   node: GalaxyNode,
   meta: RepoMeta,
+  hooks: InfoPanelHooks,
 ): void {
   panel.classList.remove("hidden");
   nameEl.textContent = node.name || meta.fullName;
 
-  const branch = meta.defaultBranch;
-  const href = node.path
-    ? `${meta.htmlUrl}/blob/${branch}/${node.path}`
-    : meta.htmlUrl;
   pathEl.innerHTML = "";
-  const a = document.createElement("a");
-  a.href = href;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.style.color = "inherit";
-  a.style.textDecoration = "none";
+  const a = document.createElement("button");
+  a.type = "button";
+  a.className = "info-path-button";
   a.textContent = node.path || meta.fullName;
-  a.addEventListener("mouseenter", () => {
-    a.style.textDecoration = "underline";
-  });
-  a.addEventListener("mouseleave", () => {
-    a.style.textDecoration = "none";
-  });
+  a.title = "Open contents in viewer";
+  a.addEventListener("click", () => hooks.onOpen());
   pathEl.appendChild(a);
 
   const rows: Array<{ label: string; value: string; swatch?: string }> = [];

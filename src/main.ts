@@ -23,6 +23,7 @@ import { hideInfoPanel, renderInfoPanel } from "./ui/info";
 import { createTimeline } from "./ui/timeline";
 import { createSearch } from "./ui/search";
 import { createLabels } from "./ui/labels";
+import { createViewer } from "./ui/viewer";
 import { formatBytes, formatNumber } from "./ui/format";
 
 // ---- DOM lookup helpers -------------------------------------------------
@@ -59,6 +60,13 @@ const timelineLabel = el<HTMLDivElement>("timeline-label");
 const searchInput = el<HTMLInputElement>("search-input");
 const searchResults = el<HTMLDivElement>("search-results");
 const labelsContainer = el<HTMLDivElement>("labels");
+const viewerRoot = el<HTMLDivElement>("viewer");
+const viewerCard = el<HTMLDivElement>("viewer").querySelector(".viewer-card") as HTMLDivElement;
+const viewerTitle = el<HTMLDivElement>("viewer-title");
+const viewerSubtitle = el<HTMLDivElement>("viewer-subtitle");
+const viewerBody = el<HTMLDivElement>("viewer-body");
+const viewerClose = el<HTMLButtonElement>("viewer-close");
+const viewerGithub = el<HTMLAnchorElement>("viewer-github");
 const toast = el<HTMLDivElement>("toast");
 
 // ---- Toast --------------------------------------------------------------
@@ -95,6 +103,27 @@ const supernovas = new Supernovas();
 stage.scene.add(supernovas.group);
 
 const labels = createLabels(labelsContainer);
+
+const viewer = createViewer(
+  {
+    root: viewerRoot,
+    card: viewerCard,
+    title: viewerTitle,
+    subtitle: viewerSubtitle,
+    body: viewerBody,
+    closeBtn: viewerClose,
+    githubLink: viewerGithub,
+  },
+  {
+    onPickNode(nodeId) {
+      if (!active) return;
+      const idx = active.galaxy.byId.get(nodeId);
+      if (idx === undefined) return;
+      selectStar(idx);
+      viewer.open(active.galaxy.nodes[idx], active.snapshot.meta, active.galaxy);
+    },
+  },
+);
 
 // ---- Active state -------------------------------------------------------
 
@@ -133,6 +162,7 @@ function clearScene(): void {
   searchCtrl.setGalaxy(null);
   searchCtrl.setEnabled(false);
   labels.clear();
+  viewer.close();
 }
 
 function setMeta(snapshot: FullRepoSnapshot, galaxy: GalaxyData): void {
@@ -398,7 +428,12 @@ function selectStar(idx: number): void {
   active.stars.setHighlight(idx);
   active.stars.setSizeMultiplier(idx, 1.8);
   const node = active.galaxy.nodes[idx];
-  renderInfoPanel(infoPanel, infoName, infoPath, infoStats, node, active.snapshot.meta);
+  renderInfoPanel(infoPanel, infoName, infoPath, infoStats, node, active.snapshot.meta, {
+    onOpen: () => {
+      if (!active) return;
+      viewer.open(node, active.snapshot.meta, active.galaxy);
+    },
+  });
   updateIsolateButton(idx);
   active.stars.positionOf(idx, tmpPos);
   cameraRig.focusOn(tmpPos, Math.max(12, node.radius * 8));
@@ -504,8 +539,12 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
-  // Escape always works — closes selection / info panel regardless of focus.
+  // Escape always works — closes viewer first, then selection / info panel.
   if (e.key === "Escape") {
+    if (viewer.isOpen()) {
+      viewer.close();
+      return;
+    }
     if (selectedIndex >= 0 && active) {
       active.stars.setSizeMultiplier(selectedIndex, 1);
       active.stars.setHighlight(-1);

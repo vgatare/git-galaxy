@@ -23,6 +23,7 @@ Open your own repo and you'll see the answer:
 - Recent commits arc across the bottom of the screen — scrub the timeline and watch supernovae flare across the galaxy.
 - Type a filename into the search box and the camera flies straight to that star with a focus-pull animation.
 - Double-click any directory (or pick "Isolate subtree" in the info panel) to hide everything outside that subtree — useful for drilling into one corner of a huge repo.
+- Click any file or folder to open a translucent **in-galaxy content viewer** — files render with syntax-aware line numbers, READMEs render as live markdown, and directory listings let you drill straight in without ever leaving for GitHub.
 
 It's the kind of thing you load up just to look at, and then accidentally lose ten minutes flying around your own codebase.
 
