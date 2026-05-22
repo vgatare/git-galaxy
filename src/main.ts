@@ -56,6 +56,14 @@ const timelineRange = el<HTMLInputElement>("timeline-range");
 const timelineLabel = el<HTMLDivElement>("timeline-label");
 const toast = el<HTMLDivElement>("toast");
 const audioToggle = el<HTMLButtonElement>("audio-toggle");
+const tokenBtn = el<HTMLButtonElement>("token-btn");
+const tokenModal = el<HTMLDivElement>("token-modal");
+const tokenInput = el<HTMLInputElement>("token-input");
+const tokenSave = el<HTMLButtonElement>("token-save");
+const tokenClear = el<HTMLButtonElement>("token-clear");
+const tokenClose = el<HTMLButtonElement>("token-modal-close");
+const tokenVisibility = el<HTMLButtonElement>("token-visibility");
+const tokenStatus = el<HTMLDivElement>("token-status");
 
 // ---- Toast --------------------------------------------------------------
 
@@ -197,6 +205,77 @@ function getStoredToken(): string | undefined {
   }
 }
 
+function syncTokenButton(): void {
+  tokenBtn.classList.toggle("has-token", !!getStoredToken());
+}
+
+// ---- Token modal --------------------------------------------------------
+
+function setTokenStatus(msg: string, type: "success" | "error" | "info"): void {
+  tokenStatus.textContent = msg;
+  tokenStatus.className = `token-status ${type}`;
+}
+
+function openTokenModal(): void {
+  const existing = getStoredToken();
+  tokenInput.value = existing ?? "";
+  tokenStatus.textContent = "";
+  tokenStatus.className = "token-status";
+  tokenModal.classList.remove("hidden");
+  tokenInput.focus();
+}
+
+function closeTokenModal(): void {
+  tokenModal.classList.add("hidden");
+}
+
+tokenBtn.addEventListener("click", openTokenModal);
+tokenClose.addEventListener("click", closeTokenModal);
+tokenModal.addEventListener("click", (e) => {
+  if (e.target === tokenModal) closeTokenModal();
+});
+
+tokenVisibility.addEventListener("click", () => {
+  const isPassword = tokenInput.type === "password";
+  tokenInput.type = isPassword ? "text" : "password";
+});
+
+tokenSave.addEventListener("click", async () => {
+  const val = tokenInput.value.trim();
+  if (!val) {
+    setTokenStatus("Enter a token first.", "error");
+    return;
+  }
+  setTokenStatus("Verifying…", "info");
+  try {
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${val}`,
+      },
+    });
+    if (!res.ok) {
+      setTokenStatus("Invalid token — GitHub rejected it.", "error");
+      return;
+    }
+    const user = (await res.json()) as { login: string };
+    window.localStorage.setItem("gh_token", val);
+    syncTokenButton();
+    setTokenStatus(`Authenticated as ${user.login}`, "success");
+  } catch {
+    setTokenStatus("Network error verifying token.", "error");
+  }
+});
+
+tokenClear.addEventListener("click", () => {
+  window.localStorage.removeItem("gh_token");
+  tokenInput.value = "";
+  syncTokenButton();
+  setTokenStatus("Token cleared.", "info");
+});
+
+syncTokenButton();
+
 async function loadRepo(slug: RepoSlug): Promise<void> {
   if (abortController) abortController.abort();
   abortController = new AbortController();
@@ -283,7 +362,9 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
       if (err.status === 403) {
         msg = "GitHub rate-limited the request. Try again in a minute.";
       } else if (err.status === 404) {
-        msg = "Repository not found or private.";
+        msg = getStoredToken()
+          ? "Repository not found, or your token lacks access."
+          : "Repository not found or private. Click \uD83D\uDD11 to add a GitHub token for private repos.";
       } else {
         msg = `GitHub error: ${err.message}`;
       }

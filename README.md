@@ -106,15 +106,20 @@ Eight comets perpetually traverse the galaxy along quadratic Bézier curves betw
 
 The whole production bundle is ~143 KB gzipped.
 
-## Hitting rate limits?
+## Private repos & rate limits
 
-GitHub's anonymous REST API is generous but finite. If you're seeing 403s, the API is rate-limiting your IP. Wait a minute or open the JS console and run:
+By default git-galaxy talks to the GitHub REST API anonymously, which means **only public repos** are visible (and you're limited to 60 requests/hour).
+
+Click the **🔑** button in the header to add a [Personal Access Token](https://github.com/settings/tokens/new?scopes=repo&description=git-galaxy). The token is verified against the GitHub API and stored in your browser's `localStorage` — it never leaves your machine. With a token you get:
+
+- **Private repository access** — visualize any repo your account can see
+- **5,000 req/hour** instead of 60
+
+You can also set the token via the JS console:
 
 ```js
 localStorage.setItem("gh_token", "ghp_yourTokenHere"); // never commit this
 ```
-
-The app picks up `gh_token` from `localStorage` and uses it as a bearer for higher limits (5,000 req/hour with a token vs. 60 anonymous).
 
 ## Architecture notes for the curious
 
