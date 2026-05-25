@@ -248,20 +248,32 @@ tokenSave.addEventListener("click", async () => {
   }
   setTokenStatus("Verifying…", "info");
   try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${val}`,
-      },
-    });
-    if (!res.ok) {
-      setTokenStatus("Invalid token — GitHub rejected it.", "error");
+    const headers = {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${val}`,
+    };
+    const userRes = await fetch("https://api.github.com/user", { headers });
+    if (userRes.ok) {
+      const user = (await userRes.json()) as { login: string };
+      window.localStorage.setItem("gh_token", val);
+      syncTokenButton();
+      setTokenStatus(`Authenticated as ${user.login}`, "success");
       return;
     }
-    const user = (await res.json()) as { login: string };
-    window.localStorage.setItem("gh_token", val);
-    syncTokenButton();
-    setTokenStatus(`Authenticated as ${user.login}`, "success");
+    // Fine-grained tokens without read:user scope return 403 on /user
+    // but still work for repo access. Verify via /rate_limit instead.
+    if (userRes.status === 403) {
+      const rlRes = await fetch("https://api.github.com/rate_limit", {
+        headers,
+      });
+      if (rlRes.ok) {
+        window.localStorage.setItem("gh_token", val);
+        syncTokenButton();
+        setTokenStatus("Token saved (repo access verified).", "success");
+        return;
+      }
+    }
+    setTokenStatus("Invalid token — GitHub rejected it.", "error");
   } catch {
     setTokenStatus("Network error verifying token.", "error");
   }
