@@ -107,13 +107,19 @@ canvas#stage:active {
   gap: 8px;
 }
 
+.search-wrap {
+  position: relative;
+  width: 280px;
+}
+
 #repo-input {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   color: var(--fg);
   padding: 8px 12px;
   border-radius: 8px;
-  width: 280px;
+  width: 100%;
+  box-sizing: border-box;
   font-family: var(--font-mono);
   font-size: 13px;
   outline: none;
@@ -123,6 +129,101 @@ canvas#stage:active {
 #repo-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(125, 212, 255, 0.18);
+}
+
+/* ---- Search dropdown -------------------------------------------------- */
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+  background: rgba(10, 12, 22, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+
+.search-results li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.search-results li:hover,
+.search-results li.active {
+  background: rgba(125, 212, 255, 0.1);
+}
+
+.search-results .sr-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.search-results .sr-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-results .sr-stars {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.search-results .sr-badge {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffd479;
+  border: 1px solid rgba(255, 212, 121, 0.35);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.search-results .sr-desc {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-results .sr-empty {
+  padding: 8px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: default;
+}
+
+.search-results .sr-empty:hover {
+  background: transparent;
+}
+
+.search-results .sr-lang {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 10.5px;
 }
 
 #launch-btn {
@@ -523,6 +624,13 @@ canvas#stage:active {
     border-bottom: 1px solid var(--border);
     padding-right: 0;
     padding-bottom: 8px;
+  }
+  #repo-form {
+    width: 100%;
+  }
+  .search-wrap {
+    width: 100%;
+    flex: 1;
   }
   #repo-input {
     width: 100%;

@@ -30,14 +30,21 @@
         <span class="brand">git-galaxy</span>
       </div>
       <form id="repo-form" autocomplete="off">
-        <input
-          id="repo-input"
-          name="repo"
-          type="text"
-          spellcheck="false"
-          placeholder="owner/repo  (e.g. torvalds/linux)"
-          aria-label="GitHub repository in owner/repo form"
-        />
+        <div class="search-wrap">
+          <input
+            id="repo-input"
+            name="repo"
+            type="text"
+            spellcheck="false"
+            placeholder="Search repos or paste owner/repo…"
+            aria-label="Search GitHub repositories"
+            role="combobox"
+            aria-expanded="false"
+            aria-autocomplete="list"
+            aria-controls="search-results"
+          />
+          <ul id="search-results" class="search-results hidden" role="listbox"></ul>
+        </div>
         <button type="submit" id="launch-btn">Launch</button>
       </form>
       <button id="token-btn" class="token-btn" title="GitHub token settings">&#128273;</button>

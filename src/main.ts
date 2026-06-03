@@ -6,7 +6,9 @@ import {
   GitHubError,
   fetchFullSnapshot,
   parseRepoInput,
+  searchRepos,
   type FullRepoSnapshot,
+  type RepoSearchResult,
   type RepoSlug,
 } from "./github/api";
 import { buildGalaxy } from "./galaxy/layout";
@@ -38,6 +40,7 @@ function el<T extends HTMLElement>(id: string): T {
 const canvas = el<HTMLCanvasElement>("stage");
 const repoForm = el<HTMLFormElement>("repo-form");
 const repoInput = el<HTMLInputElement>("repo-input");
+const searchResults = el<HTMLUListElement>("search-results");
 const launchBtn = el<HTMLButtonElement>("launch-btn");
 const loadingOverlay = el<HTMLDivElement>("loading");
 const loadingText = el<HTMLDivElement>("loading-text");
@@ -390,13 +393,178 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
   }
 }
 
+// ---- Repo search dropdown -----------------------------------------------
+
+let searchSeq = 0;
+let searchDebounce: number | null = null;
+let searchItems: RepoSearchResult[] = [];
+let searchActive = -1;
+
+function closeSearch(): void {
+  searchResults.classList.add("hidden");
+  repoInput.setAttribute("aria-expanded", "false");
+  searchItems = [];
+  searchActive = -1;
+}
+
+function renderSearchMessage(msg: string): void {
+  searchResults.innerHTML = "";
+  const li = document.createElement("li");
+  li.className = "sr-empty";
+  li.textContent = msg;
+  searchResults.appendChild(li);
+  searchResults.classList.remove("hidden");
+  repoInput.setAttribute("aria-expanded", "true");
+}
+
+function renderSearchResults(items: RepoSearchResult[]): void {
+  searchItems = items;
+  searchActive = -1;
+  if (items.length === 0) {
+    renderSearchMessage("No repositories found.");
+    return;
+  }
+  searchResults.innerHTML = "";
+  items.forEach((item, i) => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    li.dataset.index = String(i);
+
+    const top = document.createElement("div");
+    top.className = "sr-top";
+    const name = document.createElement("span");
+    name.className = "sr-name";
+    name.textContent = item.fullName;
+    top.appendChild(name);
+    if (item.isPrivate) {
+      const badge = document.createElement("span");
+      badge.className = "sr-badge";
+      badge.textContent = "private";
+      top.appendChild(badge);
+    }
+    if (item.language) {
+      const lang = document.createElement("span");
+      lang.className = "sr-lang";
+      lang.textContent = item.language;
+      top.appendChild(lang);
+    }
+    const stars = document.createElement("span");
+    stars.className = "sr-stars";
+    stars.textContent = `★ ${formatNumber(item.stars)}`;
+    top.appendChild(stars);
+    li.appendChild(top);
+
+    if (item.description) {
+      const desc = document.createElement("div");
+      desc.className = "sr-desc";
+      desc.textContent = item.description;
+      li.appendChild(desc);
+    }
+
+    li.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      chooseSearchItem(item);
+    });
+    searchResults.appendChild(li);
+  });
+  searchResults.classList.remove("hidden");
+  repoInput.setAttribute("aria-expanded", "true");
+}
+
+function chooseSearchItem(item: RepoSearchResult): void {
+  repoInput.value = item.fullName;
+  closeSearch();
+  void loadRepo({ owner: item.owner, name: item.name });
+}
+
+function highlightSearch(next: number): void {
+  const lis = searchResults.querySelectorAll<HTMLLIElement>("li[data-index]");
+  if (lis.length === 0) return;
+  searchActive = ((next % lis.length) + lis.length) % lis.length;
+  lis.forEach((li, i) => {
+    li.classList.toggle("active", i === searchActive);
+    if (i === searchActive) li.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function runSearch(raw: string): void {
+  const query = raw.trim();
+  // If it already parses as an explicit repo reference, don't search.
+  if (!query || parseRepoInput(query)) {
+    closeSearch();
+    return;
+  }
+  const seq = ++searchSeq;
+  renderSearchMessage("Searching…");
+  searchRepos(query, { token: getStoredToken() })
+    .then((items) => {
+      if (seq !== searchSeq) return; // stale response
+      renderSearchResults(items);
+    })
+    .catch((err) => {
+      if (seq !== searchSeq) return;
+      const msg =
+        err instanceof GitHubError && err.status === 403
+          ? "GitHub rate-limited search. Add a token via 🔑."
+          : "Search failed. Try again.";
+      renderSearchMessage(msg);
+    });
+}
+
+repoInput.addEventListener("input", () => {
+  if (searchDebounce) window.clearTimeout(searchDebounce);
+  const value = repoInput.value;
+  searchDebounce = window.setTimeout(() => runSearch(value), 280);
+});
+
+repoInput.addEventListener("keydown", (e) => {
+  const open = !searchResults.classList.contains("hidden");
+  if (e.key === "ArrowDown") {
+    if (open) {
+      e.preventDefault();
+      highlightSearch(searchActive + 1);
+    }
+  } else if (e.key === "ArrowUp") {
+    if (open) {
+      e.preventDefault();
+      highlightSearch(searchActive - 1);
+    }
+  } else if (e.key === "Enter") {
+    if (open && searchActive >= 0 && searchItems[searchActive]) {
+      e.preventDefault();
+      chooseSearchItem(searchItems[searchActive]);
+    }
+  } else if (e.key === "Escape") {
+    if (open) {
+      e.preventDefault();
+      closeSearch();
+    }
+  }
+});
+
+repoInput.addEventListener("focus", () => {
+  if (searchItems.length > 0) searchResults.classList.remove("hidden");
+});
+
+document.addEventListener("click", (e) => {
+  if (!searchResults.contains(e.target as Node) && e.target !== repoInput) {
+    closeSearch();
+  }
+});
+
 // ---- Form handling ------------------------------------------------------
 
 repoForm.addEventListener("submit", (e) => {
   e.preventDefault();
+  closeSearch();
   const slug = parseRepoInput(repoInput.value);
   if (!slug) {
-    showToast("Enter a GitHub repo as owner/repo or a github.com URL.");
+    // Not a direct owner/repo; treat Enter as "load top search result".
+    if (searchItems.length > 0) {
+      chooseSearchItem(searchItems[0]);
+      return;
+    }
+    showToast("Search for a repo, or enter owner/repo or a github.com URL.");
     return;
   }
   void loadRepo(slug);

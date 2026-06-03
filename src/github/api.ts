@@ -77,6 +77,48 @@ export function parseRepoInput(raw: string): RepoSlug | null {
   return null;
 }
 
+export interface RepoSearchResult {
+  fullName: string;
+  owner: string;
+  name: string;
+  description: string | null;
+  stars: number;
+  language: string | null;
+  isPrivate: boolean;
+}
+
+/** Search GitHub repositories by free-text query. */
+export async function searchRepos(
+  query: string,
+  opts: FetchOptions = {},
+): Promise<RepoSearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const data = await ghFetch<{
+    items: Array<{
+      full_name: string;
+      description: string | null;
+      stargazers_count: number;
+      language: string | null;
+      private: boolean;
+      owner: { login: string } | null;
+      name: string;
+    }>;
+  }>(
+    `/search/repositories?q=${encodeURIComponent(q)}&per_page=8&sort=stars&order=desc`,
+    opts,
+  );
+  return data.items.map((it) => ({
+    fullName: it.full_name,
+    owner: it.owner?.login ?? it.full_name.split("/")[0],
+    name: it.name,
+    description: it.description,
+    stars: it.stargazers_count,
+    language: it.language,
+    isPrivate: it.private,
+  }));
+}
+
 export interface FullRepoSnapshot {
   meta: RepoMeta;
   tree: RepoTreeEntry[];
