@@ -6,7 +6,9 @@ import {
   GitHubError,
   fetchFullSnapshot,
   parseRepoInput,
+  searchRepos,
   type FullRepoSnapshot,
+  type RepoSearchResult,
   type RepoSlug,
 } from "./github/api";
 import { buildGalaxy } from "./galaxy/layout";
@@ -22,6 +24,10 @@ import { buildLegend, renderLegend } from "./ui/legend";
 import { hideInfoPanel, renderInfoPanel } from "./ui/info";
 import { createTimeline } from "./ui/timeline";
 import { formatBytes, formatNumber } from "./ui/format";
+import { createWarp } from "./render/warp";
+import { createBlackHoleSystem } from "./render/blackhole";
+import { createCometSystem } from "./render/comets";
+import { createSonification } from "./audio/sonification";
 
 // ---- DOM lookup helpers -------------------------------------------------
 
@@ -34,6 +40,7 @@ function el<T extends HTMLElement>(id: string): T {
 const canvas = el<HTMLCanvasElement>("stage");
 const repoForm = el<HTMLFormElement>("repo-form");
 const repoInput = el<HTMLInputElement>("repo-input");
+const searchResults = el<HTMLUListElement>("search-results");
 const launchBtn = el<HTMLButtonElement>("launch-btn");
 const loadingOverlay = el<HTMLDivElement>("loading");
 const loadingText = el<HTMLDivElement>("loading-text");
@@ -51,6 +58,15 @@ const timelineContainer = el<HTMLDivElement>("timeline");
 const timelineRange = el<HTMLInputElement>("timeline-range");
 const timelineLabel = el<HTMLDivElement>("timeline-label");
 const toast = el<HTMLDivElement>("toast");
+const audioToggle = el<HTMLButtonElement>("audio-toggle");
+const tokenBtn = el<HTMLButtonElement>("token-btn");
+const tokenModal = el<HTMLDivElement>("token-modal");
+const tokenInput = el<HTMLInputElement>("token-input");
+const tokenSave = el<HTMLButtonElement>("token-save");
+const tokenClear = el<HTMLButtonElement>("token-clear");
+const tokenClose = el<HTMLButtonElement>("token-modal-close");
+const tokenVisibility = el<HTMLButtonElement>("token-visibility");
+const tokenStatus = el<HTMLDivElement>("token-status");
 
 // ---- Toast --------------------------------------------------------------
 
@@ -85,6 +101,24 @@ stage.scene.add(nebula.mesh);
 const supernovas = new Supernovas();
 stage.scene.add(supernovas.group);
 
+const warp = createWarp();
+const blackHoles = createBlackHoleSystem();
+const cometSystem = createCometSystem();
+const sonification = createSonification();
+
+// Insert custom post-processing (after bloom, before output)
+stage.composer.insertPass(blackHoles.lensingPass, 2);
+stage.composer.insertPass(warp.pass, 3);
+
+stage.scene.add(blackHoles.group);
+stage.scene.add(cometSystem.object);
+
+audioToggle.addEventListener("click", () => {
+  const enabled = sonification.toggle();
+  audioToggle.classList.toggle("active", enabled);
+  audioToggle.title = enabled ? "Mute ambient sound" : "Enable ambient sound";
+});
+
 // ---- Active state -------------------------------------------------------
 
 interface ActiveScene {
@@ -108,6 +142,8 @@ function clearScene(): void {
   stage.scene.remove(active.connections.object);
   active.stars.dispose();
   active.connections.dispose();
+  blackHoles.clearGalaxy();
+  cometSystem.clear();
   active = null;
   highlightedIndex = -1;
   selectedIndex = -1;
@@ -158,6 +194,7 @@ timelineCtrl.onScrub((commit, index) => {
   const targetIdx = active.galaxy.byId.get(targetNode.id)!;
   active.stars.positionOf(targetIdx, tmpPos);
   supernovas.emit(tmpPos, targetNode.color, Math.max(8, targetNode.radius * 6));
+  sonification.playSupernova();
 });
 
 // ---- Repo loading -------------------------------------------------------
@@ -170,6 +207,89 @@ function getStoredToken(): string | undefined {
     return undefined;
   }
 }
+
+function syncTokenButton(): void {
+  tokenBtn.classList.toggle("has-token", !!getStoredToken());
+}
+
+// ---- Token modal --------------------------------------------------------
+
+function setTokenStatus(msg: string, type: "success" | "error" | "info"): void {
+  tokenStatus.textContent = msg;
+  tokenStatus.className = `token-status ${type}`;
+}
+
+function openTokenModal(): void {
+  const existing = getStoredToken();
+  tokenInput.value = existing ?? "";
+  tokenStatus.textContent = "";
+  tokenStatus.className = "token-status";
+  tokenModal.classList.remove("hidden");
+  tokenInput.focus();
+}
+
+function closeTokenModal(): void {
+  tokenModal.classList.add("hidden");
+}
+
+tokenBtn.addEventListener("click", openTokenModal);
+tokenClose.addEventListener("click", closeTokenModal);
+tokenModal.addEventListener("click", (e) => {
+  if (e.target === tokenModal) closeTokenModal();
+});
+
+tokenVisibility.addEventListener("click", () => {
+  const isPassword = tokenInput.type === "password";
+  tokenInput.type = isPassword ? "text" : "password";
+});
+
+tokenSave.addEventListener("click", async () => {
+  const val = tokenInput.value.trim();
+  if (!val) {
+    setTokenStatus("Enter a token first.", "error");
+    return;
+  }
+  setTokenStatus("Verifying…", "info");
+  try {
+    const headers = {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${val}`,
+    };
+    const userRes = await fetch("https://api.github.com/user", { headers });
+    if (userRes.ok) {
+      const user = (await userRes.json()) as { login: string };
+      window.localStorage.setItem("gh_token", val);
+      syncTokenButton();
+      setTokenStatus(`Authenticated as ${user.login}`, "success");
+      return;
+    }
+    // Fine-grained tokens without read:user scope return 403 on /user
+    // but still work for repo access. Verify via /rate_limit instead.
+    if (userRes.status === 403) {
+      const rlRes = await fetch("https://api.github.com/rate_limit", {
+        headers,
+      });
+      if (rlRes.ok) {
+        window.localStorage.setItem("gh_token", val);
+        syncTokenButton();
+        setTokenStatus("Token saved (repo access verified).", "success");
+        return;
+      }
+    }
+    setTokenStatus("Invalid token — GitHub rejected it.", "error");
+  } catch {
+    setTokenStatus("Network error verifying token.", "error");
+  }
+});
+
+tokenClear.addEventListener("click", () => {
+  window.localStorage.removeItem("gh_token");
+  tokenInput.value = "";
+  syncTokenButton();
+  setTokenStatus("Token cleared.", "info");
+});
+
+syncTokenButton();
 
 async function loadRepo(slug: RepoSlug): Promise<void> {
   if (abortController) abortController.abort();
@@ -234,6 +354,10 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
       timelineCtrl.hide();
     }
 
+    blackHoles.setGalaxy(galaxy);
+    cometSystem.setGalaxy(galaxy);
+    sonification.setGalaxy(galaxy.nodes);
+
     cameraRig.cinematicEntrance(maxRadius);
 
     // Update URL so the view is shareable.
@@ -253,7 +377,9 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
       if (err.status === 403) {
         msg = "GitHub rate-limited the request. Try again in a minute.";
       } else if (err.status === 404) {
-        msg = "Repository not found or private.";
+        msg = getStoredToken()
+          ? "Repository not found, or your token lacks access."
+          : "Repository not found or private. Click \uD83D\uDD11 to add a GitHub token for private repos.";
       } else {
         msg = `GitHub error: ${err.message}`;
       }
@@ -267,13 +393,178 @@ async function loadRepo(slug: RepoSlug): Promise<void> {
   }
 }
 
+// ---- Repo search dropdown -----------------------------------------------
+
+let searchSeq = 0;
+let searchDebounce: number | null = null;
+let searchItems: RepoSearchResult[] = [];
+let searchActive = -1;
+
+function closeSearch(): void {
+  searchResults.classList.add("hidden");
+  repoInput.setAttribute("aria-expanded", "false");
+  searchItems = [];
+  searchActive = -1;
+}
+
+function renderSearchMessage(msg: string): void {
+  searchResults.innerHTML = "";
+  const li = document.createElement("li");
+  li.className = "sr-empty";
+  li.textContent = msg;
+  searchResults.appendChild(li);
+  searchResults.classList.remove("hidden");
+  repoInput.setAttribute("aria-expanded", "true");
+}
+
+function renderSearchResults(items: RepoSearchResult[]): void {
+  searchItems = items;
+  searchActive = -1;
+  if (items.length === 0) {
+    renderSearchMessage("No repositories found.");
+    return;
+  }
+  searchResults.innerHTML = "";
+  items.forEach((item, i) => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    li.dataset.index = String(i);
+
+    const top = document.createElement("div");
+    top.className = "sr-top";
+    const name = document.createElement("span");
+    name.className = "sr-name";
+    name.textContent = item.fullName;
+    top.appendChild(name);
+    if (item.isPrivate) {
+      const badge = document.createElement("span");
+      badge.className = "sr-badge";
+      badge.textContent = "private";
+      top.appendChild(badge);
+    }
+    if (item.language) {
+      const lang = document.createElement("span");
+      lang.className = "sr-lang";
+      lang.textContent = item.language;
+      top.appendChild(lang);
+    }
+    const stars = document.createElement("span");
+    stars.className = "sr-stars";
+    stars.textContent = `★ ${formatNumber(item.stars)}`;
+    top.appendChild(stars);
+    li.appendChild(top);
+
+    if (item.description) {
+      const desc = document.createElement("div");
+      desc.className = "sr-desc";
+      desc.textContent = item.description;
+      li.appendChild(desc);
+    }
+
+    li.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      chooseSearchItem(item);
+    });
+    searchResults.appendChild(li);
+  });
+  searchResults.classList.remove("hidden");
+  repoInput.setAttribute("aria-expanded", "true");
+}
+
+function chooseSearchItem(item: RepoSearchResult): void {
+  repoInput.value = item.fullName;
+  closeSearch();
+  void loadRepo({ owner: item.owner, name: item.name });
+}
+
+function highlightSearch(next: number): void {
+  const lis = searchResults.querySelectorAll<HTMLLIElement>("li[data-index]");
+  if (lis.length === 0) return;
+  searchActive = ((next % lis.length) + lis.length) % lis.length;
+  lis.forEach((li, i) => {
+    li.classList.toggle("active", i === searchActive);
+    if (i === searchActive) li.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function runSearch(raw: string): void {
+  const query = raw.trim();
+  // If it already parses as an explicit repo reference, don't search.
+  if (!query || parseRepoInput(query)) {
+    closeSearch();
+    return;
+  }
+  const seq = ++searchSeq;
+  renderSearchMessage("Searching…");
+  searchRepos(query, { token: getStoredToken() })
+    .then((items) => {
+      if (seq !== searchSeq) return; // stale response
+      renderSearchResults(items);
+    })
+    .catch((err) => {
+      if (seq !== searchSeq) return;
+      const msg =
+        err instanceof GitHubError && err.status === 403
+          ? "GitHub rate-limited search. Add a token via 🔑."
+          : "Search failed. Try again.";
+      renderSearchMessage(msg);
+    });
+}
+
+repoInput.addEventListener("input", () => {
+  if (searchDebounce) window.clearTimeout(searchDebounce);
+  const value = repoInput.value;
+  searchDebounce = window.setTimeout(() => runSearch(value), 280);
+});
+
+repoInput.addEventListener("keydown", (e) => {
+  const open = !searchResults.classList.contains("hidden");
+  if (e.key === "ArrowDown") {
+    if (open) {
+      e.preventDefault();
+      highlightSearch(searchActive + 1);
+    }
+  } else if (e.key === "ArrowUp") {
+    if (open) {
+      e.preventDefault();
+      highlightSearch(searchActive - 1);
+    }
+  } else if (e.key === "Enter") {
+    if (open && searchActive >= 0 && searchItems[searchActive]) {
+      e.preventDefault();
+      chooseSearchItem(searchItems[searchActive]);
+    }
+  } else if (e.key === "Escape") {
+    if (open) {
+      e.preventDefault();
+      closeSearch();
+    }
+  }
+});
+
+repoInput.addEventListener("focus", () => {
+  if (searchItems.length > 0) searchResults.classList.remove("hidden");
+});
+
+document.addEventListener("click", (e) => {
+  if (!searchResults.contains(e.target as Node) && e.target !== repoInput) {
+    closeSearch();
+  }
+});
+
 // ---- Form handling ------------------------------------------------------
 
 repoForm.addEventListener("submit", (e) => {
   e.preventDefault();
+  closeSearch();
   const slug = parseRepoInput(repoInput.value);
   if (!slug) {
-    showToast("Enter a GitHub repo as owner/repo or a github.com URL.");
+    // Not a direct owner/repo; treat Enter as "load top search result".
+    if (searchItems.length > 0) {
+      chooseSearchItem(searchItems[0]);
+      return;
+    }
+    showToast("Search for a repo, or enter owner/repo or a github.com URL.");
     return;
   }
   void loadRepo(slug);
@@ -351,6 +642,9 @@ function selectStar(idx: number): void {
   cameraRig.focusOn(tmpPos, Math.max(12, node.radius * 8));
   // Emit a small supernova on selection.
   supernovas.emit(tmpPos, node.color, Math.max(6, node.radius * 4));
+  warp.activate(0.8);
+  sonification.playSelect();
+  sonification.playWarp();
 }
 
 // ---- Keyboard shortcut --------------------------------------------------
@@ -403,6 +697,15 @@ function animate(): void {
   nebula.tick(t);
   cameraRig.tick(dt);
   supernovas.tick(dt, stage.camera.quaternion);
+
+  warp.tick(dt, t);
+  blackHoles.tick(t, stage.camera, window.innerWidth, window.innerHeight);
+  cometSystem.tick(dt);
+  sonification.tick(
+    stage.camera.position.x,
+    stage.camera.position.y,
+    stage.camera.position.z,
+  );
 
   if (active) {
     active.stars.tick(t);

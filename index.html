@@ -30,23 +30,32 @@
         <span class="brand">git-galaxy</span>
       </div>
       <form id="repo-form" autocomplete="off">
-        <input
-          id="repo-input"
-          name="repo"
-          type="text"
-          spellcheck="false"
-          placeholder="owner/repo  (e.g. torvalds/linux)"
-          aria-label="GitHub repository in owner/repo form"
-        />
+        <div class="search-wrap">
+          <input
+            id="repo-input"
+            name="repo"
+            type="text"
+            spellcheck="false"
+            placeholder="Search repos or paste owner/repo…"
+            aria-label="Search GitHub repositories"
+            role="combobox"
+            aria-expanded="false"
+            aria-autocomplete="list"
+            aria-controls="search-results"
+          />
+          <ul id="search-results" class="search-results hidden" role="listbox"></ul>
+        </div>
         <button type="submit" id="launch-btn">Launch</button>
       </form>
+      <button id="token-btn" class="token-btn" title="GitHub token settings">&#128273;</button>
       <div class="hint">
         Try
         <button class="suggest" data-repo="mrdoob/three.js">three.js</button>
         <button class="suggest" data-repo="facebook/react">react</button>
         <button class="suggest" data-repo="vercel/next.js">next.js</button>
         <button class="suggest" data-repo="tailwindlabs/tailwindcss">tailwindcss</button>
-        <button class="suggest" data-repo="vincentmanzi02/git-galaxy">git-galaxy</button>
+        <button class="suggest" data-repo="vgatare/git-galaxy">git-galaxy</button>
+        <button class="suggest" data-repo="vgatare/ikirere-analytics">ikirere-analytics</button>
       </div>
     </header>
 
@@ -84,11 +93,34 @@
         </div>
       </div>
       <div class="controls-help">
-        drag · orbit ✦ scroll · zoom ✦ hover · inspect ✦ click · focus
+        drag · orbit ✦ scroll · zoom ✦ hover · inspect ✦ click · warp to star
       </div>
     </footer>
 
+    <button id="audio-toggle" class="audio-btn" title="Enable ambient sound">&#9834;</button>
+
     <div id="toast" class="toast hidden" role="alert"></div>
+
+    <div id="token-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>GitHub Token</h2>
+          <button id="token-modal-close" class="modal-close" aria-label="Close">&times;</button>
+        </div>
+        <p class="modal-desc">
+          Add a <a href="https://github.com/settings/tokens/new?scopes=repo&description=git-galaxy" target="_blank" rel="noopener">Personal Access Token</a> to visualize private repositories. The token is stored only in your browser's localStorage.
+        </p>
+        <div class="modal-field">
+          <input id="token-input" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" spellcheck="false" autocomplete="off" />
+          <button id="token-visibility" class="token-vis-btn" type="button" title="Show/hide token">&#128065;</button>
+        </div>
+        <div class="modal-actions">
+          <button id="token-save" class="modal-btn primary">Save</button>
+          <button id="token-clear" class="modal-btn danger">Clear</button>
+        </div>
+        <div id="token-status" class="token-status"></div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
